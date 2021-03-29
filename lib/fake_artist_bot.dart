@@ -7,8 +7,10 @@ import 'package:teledart/model.dart';
 
 TeleDart teledart;
 var players = <User>[];
+int impostorIndex;
 String impostorMessage = 'Você é o impostor 🕵️‍♂️';
 String artistMessage;
+Poll currentPoll;
 
 void initialize() async {
   var token = await io.File('resources/key.txt').readAsString();
@@ -20,12 +22,23 @@ void initialize() async {
   teledart.onCommand('entrar').listen(entrar);
   teledart.onCommand('jogadores').listen(jogadores);
   teledart.onCommand('comecar').listen(comecar);
+  teledart.onCommand('votar').listen(votar);
+  teledart.onCommand('resultado').listen(resultado);
 
   teledart.onCommand('comandos').listen(comandos);
+
+  teledart.onPoll().listen((poll) => currentPoll = poll);
 }
 
 void comandos(TeleDartMessage message) {
-  var commands = ['/novojogo', '/entrar', '/jogadores', '/comecar'];
+  var commands = [
+    '/novojogo',
+    '/entrar',
+    '/jogadores',
+    '/comecar',
+    '/votar',
+    '/resultado',
+  ];
   var keyboard = commands.map((e) => [KeyboardButton(text: e)]).toList();
 
   message.reply('🤖 Selecione um comando',
@@ -70,8 +83,8 @@ void jogadores(TeleDartMessage message) {
 }
 
 void comecar(TeleDartMessage message) async {
-  if (players.length < 3) {
-    await message.reply('🤖 É necessário pelo menos 3 jogadores para jogar');
+  if (players.length < 2) {
+    await message.reply('🤖 É necessário pelo menos 2 jogadores para jogar');
     return;
   }
   await message.reply('⏳ Gerando nova palavra... ⏳');
@@ -80,7 +93,7 @@ void comecar(TeleDartMessage message) async {
   var translation = await translate(word);
   artistMessage = '🎨 O tema do desenho é: *$translation*';
 
-  var impostorIndex = Random().nextInt(players.length);
+  impostorIndex = Random().nextInt(players.length);
   for (var i = 0; i < players.length; i++) {
     await teledart.telegram
         .sendMessage(players[i].id,
@@ -90,5 +103,34 @@ void comecar(TeleDartMessage message) async {
           (error, stackTrace) => message
               .reply('😔 Não foi possível enviar mensagem para um jogador'),
         );
+  }
+}
+
+void votar(TeleDartMessage message) {
+  if (players.length < 2) {
+    message.reply('🤖 Adicione mais jogadores para criar uma enquete');
+    return;
+  }
+  message.replyPoll(
+      'Quem é o impostor? 🧐', players.map((e) => e.first_name).toList());
+}
+
+void resultado(TeleDartMessage message) {
+  currentPoll.is_closed = true;
+
+  var biggest = currentPoll.options[0];
+  for (var i = 1; i < currentPoll.options.length; i++) {
+    if (currentPoll.options[i].voter_count > biggest.voter_count) {
+      biggest = currentPoll.options[i];
+    }
+  }
+  if (biggest.text == players[impostorIndex].first_name) {
+    message.reply(
+        '*O impostor foi descoberto!* 😁\n\n'
+        '${biggest.text} ainda pode tentar adivinhar o tema',
+        parse_mode: 'Markdown');
+  } else {
+    message.reply('*O impostor verdadeiro era...*\n\n${biggest.text} 😎',
+        parse_mode: 'Markdown');
   }
 }
