@@ -1,8 +1,10 @@
 import 'dart:io' as io;
 import 'dart:math';
+import 'package:fake_artist_bot/word_generator.dart';
 import 'package:teledart/teledart.dart';
 import 'package:teledart/telegram.dart';
 import 'package:teledart/model.dart';
+import 'package:web_scraper/web_scraper.dart';
 
 TeleDart teledart;
 var players = <User>[];
@@ -18,13 +20,13 @@ void initialize() async {
   teledart.onCommand('novojogo').listen(novoJogo);
   teledart.onCommand('entrar').listen(entrar);
   teledart.onCommand('jogadores').listen(jogadores);
-  teledart.onCommand('gerarimpostor').listen(gerarImpostor);
+  teledart.onCommand('comecar').listen(comecar);
 
   teledart.onCommand('comandos').listen(comandos);
 }
 
 void comandos(TeleDartMessage message) {
-  var commands = ['/novojogo', '/entrar', '/jogadores', '/gerarimpostor'];
+  var commands = ['/novojogo', '/entrar', '/jogadores', '/comecar'];
   var keyboard = commands.map((e) => [KeyboardButton(text: e)]).toList();
 
   message.reply('Selecione um comando',
@@ -67,12 +69,23 @@ void jogadores(TeleDartMessage message) {
   message.reply(text, parse_mode: 'Markdown');
 }
 
-void gerarImpostor(TeleDartMessage message) {
+void comecar(TeleDartMessage message) async {
+  await message.reply('Gerando nova palavra...');
+
+  var word = await randomWord();
+  var translation = await translate(word);
+  artistMessage = translation;
+
   var impostorIndex = Random().nextInt(players.length);
   for (var i = 0; i < players.length; i++) {
-    teledart.telegram.sendMessage(
-      players[i].id,
-      impostorIndex == i ? impostorMessage : artistMessage,
-    );
+    await teledart.telegram
+        .sendMessage(
+          players[i].id,
+          impostorIndex == i ? impostorMessage : '$artistMessage',
+        )
+        .onError(
+          (error, stackTrace) =>
+              message.reply('Não foi possível enviar mensagem para um jogador'),
+        );
   }
 }
