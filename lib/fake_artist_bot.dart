@@ -4,12 +4,11 @@ import 'package:fake_artist_bot/word_generator.dart';
 import 'package:teledart/teledart.dart';
 import 'package:teledart/telegram.dart';
 import 'package:teledart/model.dart';
-import 'package:web_scraper/web_scraper.dart';
 
 TeleDart teledart;
 var players = <User>[];
-String impostorMessage = 'Você é o impostor';
-String artistMessage = 'Você é um artista';
+String impostorMessage = 'Você é o impostor 🕵️‍♂️';
+String artistMessage;
 
 void initialize() async {
   var token = await io.File('resources/key.txt').readAsString();
@@ -29,7 +28,7 @@ void comandos(TeleDartMessage message) {
   var commands = ['/novojogo', '/entrar', '/jogadores', '/comecar'];
   var keyboard = commands.map((e) => [KeyboardButton(text: e)]).toList();
 
-  message.reply('Selecione um comando',
+  message.reply('🤖 Selecione um comando',
       reply_markup: ReplyKeyboardMarkup(keyboard: keyboard));
 }
 
@@ -37,7 +36,7 @@ void start(TeleDartMessage message) {
   var text;
   if (message.chat.type == 'group') {
     text = '*Bem vindo ao FakeArtistBot!*\n\n'
-        'Antes de começar entre neste usuário >>@FakeArtistBot<< e inicie uma conversa.\n'
+        'Antes de começar entre neste usuário >>🤖@FakeArtistBot🤖<< e inicie uma conversa.\n'
         'Digite /comandos para saber o que posso fazer.';
   } else {
     text = '*Bem vindo ao FakeArtistBot!*\n\n'
@@ -50,19 +49,20 @@ void start(TeleDartMessage message) {
 
 void novoJogo(TeleDartMessage message) {
   players = <User>[];
+  message.reply('🔃 Jogo reiniciado');
 }
 
 void entrar(TeleDartMessage message) {
   if (players.any((element) => element.id == message.from.id)) {
-    message.reply('${message.from.first_name} já está no jogo');
+    message.reply('👤 ${message.from.first_name} já está no jogo');
     return;
   }
   players.add(message.from);
-  message.reply('${message.from.first_name} foi adicionade ao jogo');
+  message.reply('👤 ${message.from.first_name} foi adicionade ao jogo');
 }
 
 void jogadores(TeleDartMessage message) {
-  var text = '*Jogadores atuais:*\n\n';
+  var text = '👥 *Jogadores atuais:*\n\n';
   for (var player in players) {
     text += '- ${player.first_name}\n';
   }
@@ -70,22 +70,25 @@ void jogadores(TeleDartMessage message) {
 }
 
 void comecar(TeleDartMessage message) async {
-  await message.reply('Gerando nova palavra...');
+  if (players.length < 3) {
+    await message.reply('🤖 É necessário pelo menos 3 jogadores para jogar');
+    return;
+  }
+  await message.reply('⏳ Gerando nova palavra... ⏳');
 
   var word = await randomWord();
   var translation = await translate(word);
-  artistMessage = translation;
+  artistMessage = '🎨 O tema do desenho é: *$translation*';
 
   var impostorIndex = Random().nextInt(players.length);
   for (var i = 0; i < players.length; i++) {
     await teledart.telegram
-        .sendMessage(
-          players[i].id,
-          impostorIndex == i ? impostorMessage : '$artistMessage',
-        )
+        .sendMessage(players[i].id,
+            impostorIndex == i ? '$impostorMessage' : '$artistMessage',
+            parse_mode: 'Markdown')
         .onError(
-          (error, stackTrace) =>
-              message.reply('Não foi possível enviar mensagem para um jogador'),
+          (error, stackTrace) => message
+              .reply('😔 Não foi possível enviar mensagem para um jogador'),
         );
   }
 }
