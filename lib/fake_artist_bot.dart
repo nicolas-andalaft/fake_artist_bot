@@ -61,7 +61,7 @@ void entrar(TeleDartMessage message) {
     return;
   }
 
-  if (games[id].players.any((element) => element.id == id)) {
+  if (games[id].players.any((element) => element.id == message.from.id)) {
     message.reply('👤 ${message.from.first_name} já está no jogo');
   } else {
     games[id].players.add(message.from);
