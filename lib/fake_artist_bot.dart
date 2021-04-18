@@ -4,48 +4,32 @@ import 'package:fake_artist_bot/word_generator.dart';
 import 'package:teledart/teledart.dart';
 import 'package:teledart/telegram.dart';
 import 'package:teledart/model.dart';
+import 'package:fake_artist_bot/models/game.dart' as game;
 
 TeleDart teledart;
-var players = <User>[];
-int impostorIndex;
-String impostorMessage = 'Você é o impostor 🕵️‍♂️';
-String artistMessage;
-Poll currentPoll;
+Map<int, game.Game> games = {};
+final Map<String, Function> commands = {
+  'ajuda': ajuda,
+  'novojogo': novoJogo,
+  'entrar': entrar,
+  'jogadores': jogadores,
+  'comecar': comecar,
+  'votar': votar,
+  'resultado': resultado,
+};
 
 void initialize() async {
   var token = await io.File('resources/key.txt').readAsString();
   teledart = TeleDart(Telegram(token), Event());
-  await teledart.start().then((me) => print('${me.username} is initialised'));
+  await teledart.start().then((me) => print('${me.username} is initializing'));
 
-  teledart.onCommand('start').listen(start);
-  teledart.onCommand('novojogo').listen(novoJogo);
-  teledart.onCommand('entrar').listen(entrar);
-  teledart.onCommand('jogadores').listen(jogadores);
-  teledart.onCommand('comecar').listen(comecar);
-  teledart.onCommand('votar').listen(votar);
-  teledart.onCommand('resultado').listen(resultado);
-
-  teledart.onCommand('comandos').listen(comandos);
-
-  teledart.onPoll().listen((poll) => currentPoll = poll);
+  teledart.onCommand('start').listen(ajuda);
+  for (var command in commands.entries) {
+    teledart.onCommand(command.key).listen(command.value);
+  }
 }
 
-void comandos(TeleDartMessage message) {
-  var commands = [
-    '/novojogo',
-    '/entrar',
-    '/jogadores',
-    '/comecar',
-    '/votar',
-    '/resultado',
-  ];
-  var keyboard = commands.map((e) => [KeyboardButton(text: e)]).toList();
-
-  message.reply('🤖 Selecione um comando',
-      reply_markup: ReplyKeyboardMarkup(keyboard: keyboard));
-}
-
-void start(TeleDartMessage message) {
+void ajuda(TeleDartMessage message) {
   var text;
   if (message.chat.type == 'group') {
     text = '*Bem vindo ao FakeArtistBot!*\n\n'
@@ -61,29 +45,51 @@ void start(TeleDartMessage message) {
 }
 
 void novoJogo(TeleDartMessage message) {
-  players = <User>[];
-  message.reply('🔃 Jogo reiniciado');
+  var id = message.chat.id;
+  if (games.containsKey(id)) {
+    games[id].reset();
+    message.reply('🔃 Jogo reiniciado');
+  } else {
+    games[id] = game.Game();
+    message.reply('🔃 Jogo iniciado');
+  }
 }
 
 void entrar(TeleDartMessage message) {
-  if (players.any((element) => element.id == message.from.id)) {
-    message.reply('👤 ${message.from.first_name} já está no jogo');
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
     return;
   }
-  players.add(message.from);
-  message.reply('👤 ${message.from.first_name} foi adicionade ao jogo');
+
+  if (games[id].players.any((element) => element.id == id)) {
+    message.reply('👤 ${message.from.first_name} já está no jogo');
+  } else {
+    games[id].players.add(message.from);
+    message.reply('👤 ${message.from.first_name} foi adicionade ao jogo');
+  }
 }
 
 void jogadores(TeleDartMessage message) {
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
+    return;
+  }
+
   var text = '👥 *Jogadores atuais:*\n\n';
-  for (var player in players) {
+  for (var player in games[id].players) {
     text += '- ${player.first_name}\n';
   }
   message.reply(text, parse_mode: 'Markdown');
 }
 
 void comecar(TeleDartMessage message) async {
-  if (players.length < 2) {
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
+    return;
+  }
+  var game = games[id];
+
+  if (game.players.length < 2) {
     await message.reply('🤖 É necessário pelo menos 2 jogadores para jogar');
     return;
   }
@@ -91,13 +97,16 @@ void comecar(TeleDartMessage message) async {
 
   var word = await randomWord();
   var translation = await translate(word);
-  artistMessage = '🎨 O tema do desenho é: *$translation*';
+  game.artistMessage = '🎨 O tema do desenho é: *$translation*';
 
-  impostorIndex = Random().nextInt(players.length);
-  for (var i = 0; i < players.length; i++) {
+  game.impostorIndex = Random().nextInt(game.players.length);
+  for (var i = 0; i < game.players.length; i++) {
     await teledart.telegram
-        .sendMessage(players[i].id,
-            impostorIndex == i ? '$impostorMessage' : '$artistMessage',
+        .sendMessage(
+            game.players[i].id,
+            game.impostorIndex == i
+                ? '${game.impostorMessage}'
+                : '${game.artistMessage}',
             parse_mode: 'Markdown')
         .onError(
           (error, stackTrace) => message
@@ -107,30 +116,38 @@ void comecar(TeleDartMessage message) async {
 }
 
 void votar(TeleDartMessage message) {
-  if (players.length < 2) {
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
+    return;
+  }
+
+  if (games[id].players.length < 2) {
     message.reply('🤖 Adicione mais jogadores para criar uma enquete');
     return;
   }
+
   message.replyPoll(
-      'Quem é o impostor? 🧐', players.map((e) => e.first_name).toList());
+    'Quem é o impostor? 🧐',
+    games[id].players.map((e) => e.first_name).toList(),
+    is_anonymous: false,
+  );
 }
 
 void resultado(TeleDartMessage message) {
-  currentPoll.is_closed = true;
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
+    return;
+  }
 
-  var biggest = currentPoll.options[0];
-  for (var i = 1; i < currentPoll.options.length; i++) {
-    if (currentPoll.options[i].voter_count > biggest.voter_count) {
-      biggest = currentPoll.options[i];
-    }
+  var impostor = games[id].players[games[id].impostorIndex];
+  message.reply('*O impostor verdadeiro era...*\n\n${impostor.first_name} 😎',
+      parse_mode: 'Markdown');
+}
+
+bool _isValid(int chatId, TeleDartMessage message) {
+  if (!games.containsKey(chatId)) {
+    message.reply('❌ Crie um jogo novo primeiro');
+    return false;
   }
-  if (biggest.text == players[impostorIndex].first_name) {
-    message.reply(
-        '*O impostor foi descoberto!* 😁\n\n'
-        '${biggest.text} ainda pode tentar adivinhar o tema',
-        parse_mode: 'Markdown');
-  } else {
-    message.reply('*O impostor verdadeiro era...*\n\n${biggest.text} 😎',
-        parse_mode: 'Markdown');
-  }
+  return true;
 }
