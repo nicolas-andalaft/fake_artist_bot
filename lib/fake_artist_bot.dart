@@ -1,5 +1,6 @@
 import 'dart:io' as io;
 import 'dart:math';
+import 'package:fake_artist_bot/models/game_poll.dart';
 import 'package:fake_artist_bot/word_generator.dart';
 import 'package:teledart/teledart.dart';
 import 'package:teledart/telegram.dart';
@@ -8,13 +9,13 @@ import 'package:fake_artist_bot/models/game.dart' as game;
 
 TeleDart teledart;
 Map<int, game.Game> games = {};
+Map<String, GamePoll> openPolls = {};
 final Map<String, Function> commands = {
   'ajuda': ajuda,
   'novojogo': novoJogo,
   'entrar': entrar,
   'jogadores': jogadores,
   'comecar': comecar,
-  'votar': votar,
   'resultado': resultado,
 };
 
@@ -27,6 +28,10 @@ void initialize() async {
   for (var command in commands.entries) {
     teledart.onCommand(command.key).listen(command.value);
   }
+
+  teledart.onPoll().listen((pool) {});
+
+  teledart.onPollAnswer().listen(onPollAnswer);
 }
 
 void ajuda(TeleDartMessage message) {
@@ -113,24 +118,8 @@ void comecar(TeleDartMessage message) async {
               .reply('😔 Não foi possível enviar mensagem para um jogador'),
         );
   }
-}
 
-void votar(TeleDartMessage message) {
-  var id = message.chat.id;
-  if (!_isValid(id, message)) {
-    return;
-  }
-
-  if (games[id].players.length < 2) {
-    message.reply('🤖 Adicione mais jogadores para criar uma enquete');
-    return;
-  }
-
-  message.replyPoll(
-    'Quem é o impostor? 🧐',
-    games[id].players.map((e) => e.first_name).toList(),
-    is_anonymous: false,
-  );
+  _createPoll(message);
 }
 
 void resultado(TeleDartMessage message) {
@@ -142,6 +131,47 @@ void resultado(TeleDartMessage message) {
   var impostor = games[id].players[games[id].impostorIndex];
   message.reply('*O impostor verdadeiro era...*\n\n${impostor.first_name} 😎',
       parse_mode: 'Markdown');
+}
+
+void _createPoll(TeleDartMessage message) {
+  var id = message.chat.id;
+
+  openPolls.remove(games[id].poolId);
+  message
+      .replyPoll(
+    'Quem é o impostor? 🧐',
+    games[id].players.map((e) => e.first_name).toList(),
+    is_anonymous: false,
+  )
+      .then(
+    (value) {
+      openPolls[value.poll.id] = GamePoll()..chatId = id;
+      games[id].poolId = value.poll.id;
+    },
+  );
+}
+
+void onPollAnswer(PollAnswer pollAnswer) {
+  var poll = openPolls[pollAnswer.poll_id];
+  if (poll == null) return;
+
+  var user = pollAnswer.user;
+  if (pollAnswer.option_ids.isEmpty) {
+    poll.votes[user] = null;
+    return;
+  }
+
+  var game = games[poll.chatId];
+  poll.votes[user] = game.players[pollAnswer.option_ids[0]];
+
+  teledart.telegram.sendMessage(
+    poll.chatId,
+    '*${user.first_name}* '
+    'votou em '
+    '*${poll.votes[user].first_name}* '
+    '🤭',
+    parse_mode: 'Markdown',
+  );
 }
 
 bool _isValid(int chatId, TeleDartMessage message) {

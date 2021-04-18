@@ -5,7 +5,7 @@ class Game {
   var players = <User>[];
   int impostorIndex;
   String artistMessage;
-  Poll currentPoll;
+  String poolId;
 
   void reset() {
     players = <User>[];
