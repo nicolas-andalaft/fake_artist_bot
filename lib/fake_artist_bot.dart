@@ -17,6 +17,9 @@ final Map<String, Function> commands = {
   'jogadores': jogadores,
   'comecar': comecar,
   'resultado': resultado,
+  'impostorganhou': impostorganhou,
+  'impostorperdeu': impostorperdeu,
+  'placar': placar,
 };
 
 void initialize() async {
@@ -66,10 +69,10 @@ void entrar(TeleDartMessage message) {
     return;
   }
 
-  if (games[id].players.any((element) => element.id == message.from.id)) {
+  if (games[id].getPlayers().any((element) => element.id == message.from.id)) {
     message.reply('👤 ${message.from.first_name} já está no jogo');
   } else {
-    games[id].players.add(message.from);
+    games[id].addPlayer(message.from);
     message.reply('👤 ${message.from.first_name} foi adicionade ao jogo');
   }
 }
@@ -81,7 +84,7 @@ void jogadores(TeleDartMessage message) {
   }
 
   var text = '👥 *Jogadores atuais:*\n\n';
-  for (var player in games[id].players) {
+  for (var player in games[id].getPlayers()) {
     text += '- ${player.first_name}\n';
   }
   message.reply(text, parse_mode: 'Markdown');
@@ -94,21 +97,23 @@ void comecar(TeleDartMessage message) async {
   }
   var game = games[id];
 
-  if (game.players.length < 2) {
+  if (game.getPlayers().length < 2) {
     await message.reply('🤖 É necessário pelo menos 2 jogadores para jogar');
     return;
   }
+
+  game.isPlaying = true;
   await message.reply('⏳ Gerando nova palavra... ⏳');
 
   var word = await randomWord();
   var translation = await translate(word);
   game.artistMessage = '🎨 O tema do desenho é: *$translation*';
 
-  game.impostorIndex = Random().nextInt(game.players.length);
-  for (var i = 0; i < game.players.length; i++) {
+  game.impostorIndex = Random().nextInt(game.getPlayers().length);
+  for (var i = 0; i < game.getPlayers().length; i++) {
     await teledart.telegram
         .sendMessage(
-            game.players[i].id,
+            game.getPlayers()[i].id,
             game.impostorIndex == i
                 ? '${game.impostorMessage}'
                 : '${game.artistMessage}',
@@ -123,14 +128,14 @@ void comecar(TeleDartMessage message) async {
 }
 
 void resultado(TeleDartMessage message) {
-  var id = message.chat.id;
-  if (!_isValid(id, message)) {
-    return;
-  }
+  // var id = message.chat.id;
+  // if (!_isValid(id, message)) {
+  //   return;
+  // }
 
-  var impostor = games[id].players[games[id].impostorIndex];
-  message.reply('*O impostor verdadeiro era...*\n\n${impostor.first_name} 😎',
-      parse_mode: 'Markdown');
+  // var impostor = games[id].getPlayers()[games[id].impostorIndex];
+  // message.reply('*O impostor verdadeiro era...*\n\n${impostor.first_name} 😎',
+  //     parse_mode: 'Markdown');
 }
 
 void _createPoll(TeleDartMessage message) {
@@ -140,7 +145,7 @@ void _createPoll(TeleDartMessage message) {
   message
       .replyPoll(
     'Quem é o impostor? 🧐',
-    games[id].players.map((e) => e.first_name).toList(),
+    games[id].getPlayers().map((e) => e.first_name).toList(),
     is_anonymous: false,
   )
       .then(
@@ -149,6 +154,44 @@ void _createPoll(TeleDartMessage message) {
       games[id].poolId = value.poll.id;
     },
   );
+}
+
+void impostorganhou(TeleDartMessage message) {
+  var id = message.chat.id;
+  var game = games[id];
+  if (!_isValid(id, message) || !game.isPlaying) {
+    return;
+  }
+
+  game.score[game.impostorIndex]++;
+  game.isPlaying = false;
+}
+
+void impostorperdeu(TeleDartMessage message) {
+  var id = message.chat.id;
+  var game = games[id];
+  if (!_isValid(id, message) || !game.isPlaying) {
+    return;
+  }
+
+  game.score[game.impostorIndex]--;
+  game.isPlaying = false;
+}
+
+void placar(TeleDartMessage message) {
+  var id = message.chat.id;
+  if (!_isValid(id, message)) {
+    return;
+  }
+
+  var players = games[id].getPlayers();
+  var score = games[id].score;
+  var text = '*Placar atual:*\n\n';
+  for (int i = 0; i < players.length; i++) {
+    text += '${players[i].first_name}: *${score[i]}*\n';
+  }
+
+  message.reply(text, parse_mode: 'Markdown');
 }
 
 void onPollAnswer(PollAnswer pollAnswer) {
@@ -162,7 +205,7 @@ void onPollAnswer(PollAnswer pollAnswer) {
   }
 
   var game = games[poll.chatId];
-  poll.votes[user] = game.players[pollAnswer.option_ids[0]];
+  poll.votes[user] = game.getPlayers()[pollAnswer.option_ids[0]];
 
   teledart.telegram.sendMessage(
     poll.chatId,
